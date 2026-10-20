@@ -1,0 +1,7 @@
+node_modules/
+data/raw/
+*.apk
+*.rar
+Thumbs.db
+.DS_Store
+.vscode/
