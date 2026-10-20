@@ -1,4 +1,4 @@
-const CACHE = 'coderuta-v7';
+const CACHE = 'coderuta-v8';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {

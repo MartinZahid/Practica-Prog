@@ -172,6 +172,23 @@
   .chipc:active{transform:scale(.95)}
   .chipc.used{opacity:.28;pointer-events:none}
   .previewframe{width:100%;height:190px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:8px}
+  .chip.userchip{cursor:pointer;font-family:inherit}
+  .modal{position:fixed;inset:0;background:rgba(3,7,18,.62);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:80}
+  .modal.show{display:flex}
+  .sheet{width:100%;max-width:480px;background:#0f1b33;border:1px solid var(--line);border-radius:18px 18px 0 0;padding:16px 16px 26px;animation:sheetin .22s ease}
+  @keyframes sheetin{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+  .sheet .lvrow{display:flex;justify-content:space-between;align-items:center}
+  .xbtn{background:none;border:0;color:#93a4c3;font-size:18px;cursor:pointer}
+  .urow{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .uinfo{flex:1;font-size:14px;min-width:0}
+  .urow.cur .uinfo b{color:#38bdf8}
+  .usub{font-size:12px;color:#8ba0c0}
+  .utag{font-size:10px;background:#13213d;border:1px solid #22345a;border-radius:6px;padding:1px 5px;color:#38bdf8}
+  .newuser{display:flex;gap:8px;margin-top:12px}
+  .newuser input{flex:1;min-width:0;background:#0a152a;border:1px solid var(--line);color:#eaf2ff;border-radius:10px;padding:10px;font-size:14px}
+  .newuser .btn,.urow .btn{width:auto;flex:0 0 auto;padding:9px 14px;font-size:12.5px}
+  .urow .btn.ghost.small{padding:9px 10px}
+  @media(max-width:430px){#userName{display:none}}
 </style>
 </head>
 <body>
@@ -179,6 +196,7 @@
   <div class="wrap">
     <span class="logo">CodeRuta</span>
     <span class="spacer"></span>
+    <button class="chip userchip" onclick="openUsers()" title="Cambiar usuario">👤 <span id="userName">Invitado</span></button>
     <span class="chip streak" id="chipStreak">🔥 0</span>
     <span class="chip" id="chipXp">⭐ 0 XP</span>
   </div>
@@ -193,6 +211,18 @@
     <button class="navbtn" data-nav="challenge" onclick="go('challenge')"><span class="ico">🎯</span>Reto</button>
     <button class="navbtn" data-nav="achievements" onclick="go('achievements')"><span class="ico">🏆</span>Logros</button>
     <button class="navbtn" data-nav="help" onclick="go('help')"><span class="ico">❔</span>Ayuda</button>
+  </div>
+</div>
+
+<div class="modal" id="userModal" onclick="if(event.target===this) closeUsers()">
+  <div class="sheet">
+    <div class="lvrow"><b>👤 Usuarios</b><button class="xbtn" onclick="closeUsers()">✕</button></div>
+    <p style="font-size:12.5px;color:#8ba0c0;margin:6px 0 2px">Cada usuario guarda su propio progreso en este dispositivo.</p>
+    <div id="userList"></div>
+    <div class="newuser">
+      <input id="newUser" placeholder="Nuevo usuario" maxlength="16" onkeydown="if(event.key==='Enter') createUserFromInput()">
+      <button class="btn primary small" onclick="createUserFromInput()">Añadir</button>
+    </div>
   </div>
 </div>
 
@@ -621,6 +651,18 @@ const ACHIEVEMENTS = [
 ];
 
 /* ============================ Estado ============================ */
+const PROFILES_KEY = 'coderuta_profiles_v1';
+function loadProfile(){
+  try{
+    const p = JSON.parse(localStorage.getItem(PROFILES_KEY));
+    if(p && p.current && Array.isArray(p.list) && p.list.length && p.list.indexOf(p.current)>=0) return p;
+  }catch(e){}
+  return {current:'Invitado', list:['Invitado']};
+}
+let profile = loadProfile();
+function saveProfile(){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(profile)); }catch(e){} }
+function stateKey(name){ return KEY+'::'+name; }
+
 let state = load();
 
 function defaultState(){
@@ -630,10 +672,67 @@ function defaultState(){
           goalMetDay:null, goalsMet:0, hard:false, sound:true, beatPos:{}};
 }
 function load(){
-  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && typeof s==='object') return Object.assign(defaultState(), s); }catch(e){}
+  const k = stateKey(profile.current);
+  try{
+    let raw = localStorage.getItem(k);
+    if(raw===null){ raw = localStorage.getItem(KEY); if(raw!==null) localStorage.setItem(k, raw); }
+    if(raw!==null){ const s = JSON.parse(raw); if(s && typeof s==='object') return Object.assign(defaultState(), s); }
+  }catch(e){}
   return defaultState();
 }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+function save(){ try{ localStorage.setItem(stateKey(profile.current), JSON.stringify(state)); }catch(e){} }
+
+/* --------- Perfiles de usuario --------- */
+function resetRuntime(){ openId=null; view='learn'; selectedOption=null; reviewMode=false;
+  beatIdx=0; beatSel=null; beatOk=null; beatChips=[]; beatGapFill=[]; beatTypeVal=''; beatFinished=false; }
+function switchUser(name){
+  if(name===profile.current){ closeUsers(); return; }
+  if(profile.list.indexOf(name)<0) return;
+  save();
+  profile.current = name; saveProfile();
+  state = load();
+  resetRuntime(); closeUsers(); render(); window.scrollTo(0,0);
+  toast('👤 '+name);
+}
+function createUserFromInput(){
+  const el = document.getElementById('newUser');
+  let name = ((el && el.value)||'').replace(/[<>"'&]/g,'').replace(/\s+/g,' ').trim();
+  if(!name){ toast('Escribe un nombre 🙂'); return; }
+  if(name.length>16) name = name.slice(0,16);
+  if(profile.list.indexOf(name)>=0){ switchUser(name); return; }
+  if(profile.list.length>=8){ toast('Máximo 8 usuarios en este dispositivo'); return; }
+  save();
+  profile.list.push(name); profile.current = name; saveProfile();
+  state = defaultState(); save();
+  if(el) el.value='';
+  resetRuntime(); closeUsers(); render(); window.scrollTo(0,0);
+  toast('👤 '+name+' listo');
+}
+function deleteUser(name){
+  if(profile.list.length<=1){ toast('Debe quedar al menos un usuario'); return; }
+  profile.list = profile.list.filter(function(n){ return n!==name; });
+  try{ localStorage.removeItem(stateKey(name)); }catch(e){}
+  if(profile.current===name){ profile.current = profile.list[0]; saveProfile(); state = load(); resetRuntime(); }
+  else saveProfile();
+  renderUsers(); render();
+  toast('Usuario eliminado');
+}
+function openUsers(){ const m=document.getElementById('userModal'); if(!m) return; renderUsers(); m.classList.add('show'); }
+function closeUsers(){ const m=document.getElementById('userModal'); if(m) m.classList.remove('show'); }
+function renderUsers(){
+  const box = document.getElementById('userList'); if(!box) return;
+  box.innerHTML = profile.list.map(function(n){
+    let xp=0;
+    try{ const raw=localStorage.getItem(stateKey(n)); if(raw){ const s=JSON.parse(raw); xp=(s&&s.xp)||0; } }catch(e){}
+    const lv = Math.floor(xp/100)+1;
+    const cur = n===profile.current;
+    return `<div class="urow ${cur?'cur':''}">
+      <div class="uinfo"><b>${escapeHtml(n)}</b>${cur?' <span class="utag">actual</span>':''}<br><span class="usub">Nivel ${lv} · ${xp} XP</span></div>
+      ${cur?'':'<button class="btn small" onclick="switchUser(\''+escAttr(n)+'\')">Usar</button>'}
+      ${profile.list.length>1?'<button class="btn ghost small" title="Eliminar" onclick="deleteUser(\''+escAttr(n)+'\')">🗑</button>':''}
+    </div>`;
+  }).join('');
+}
 
 function level(xp){ return Math.floor((xp||0)/100)+1; }
 function xpInLevel(xp){ return (xp||0)%100; }
@@ -742,6 +841,7 @@ function render(){
 function updateTop(){
   document.getElementById('chipStreak').textContent = '🔥 '+(state.streak||0);
   document.getElementById('chipXp').textContent = '⭐ '+(state.xp||0)+' XP';
+  const un = document.getElementById('userName'); if(un) un.textContent = profile.current;
 }
 
 /* ============================ Vista Aprender ============================ */
@@ -1381,7 +1481,11 @@ function renderHelp(){
     </div>
     <div class="card theory">
       <p><b>📲 Instalar en tu teléfono:</b> abre esta página en Chrome (Android) y toca el menú ⋮ → <b>"Añadir a pantalla de inicio"</b>. En iPhone usa Compartir → "Añadir a pantalla de inicio". Se abrirá como una app.</p>
-      <p>Funciona <b>sin internet</b> una vez abierta. Tu progreso se guarda en este teléfono.</p>
+      <p>Funciona <b>sin internet</b> una vez abierta. El progreso de cada usuario se guarda por separado en este teléfono.</p>
+    </div>
+    <div class="card theory">
+      <p><b>👤 Usuarios:</b> cambia de perfil para que cada persona tenga su propio XP, racha y logros.</p>
+      <button class="btn ghost small" onclick="openUsers()">Cambiar o añadir usuario</button>
     </div>
     <div class="card theory">
       <p><b>🔊 Sonido y vibración:</b> avisos al acertar o fallar.</p>
